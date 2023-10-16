@@ -8,5 +8,6 @@ bot = Bot(token=config.BOT_TOKEN, parse_mode=types.ParseMode.HTML)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
-# current_db_config = ConnectionConfig.get_test_db_connection_config()
-# database_manager = PostgresDataBaseManager(current_db_config)
+current_db_config = ConnectionConfig.get_test_db_connection_config()
+database_manager = PostgresDataBaseManager(current_db_config)
+
