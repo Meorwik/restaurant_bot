@@ -110,7 +110,6 @@ async def handle_product_menu(call: types.CallbackQuery, state: FSMContext):
 
     async with state.proxy() as data:
         current_category = data["current_category"]
-        data["prev_callback"] = data["current_callback"]
         data["current_callback"] = call.data
 
         back_callback = data["prev_callback"]
