@@ -11,8 +11,7 @@ class Category:
         self.__products = {}
 
         if picture_url is not None:
-            with open(picture_url, "rb") as picture:
-                self.__picture = InputMediaPhoto(picture)
+            self.__picture = InputMediaPhoto(picture_url)
         else:
             self.__picture = None
 
