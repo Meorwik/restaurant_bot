@@ -98,7 +98,7 @@ class PostgresDataBaseManager(DataBaseManager):
                 name=product.get("name"),
                 cost=product.get("cost"),
                 description=product.get("description"),
-                product_picture=product.get("product_picture")
+                product_picture=product.get("picture_url")
             )
             for product in fetch_result
         ]
