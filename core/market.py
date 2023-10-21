@@ -1,11 +1,20 @@
+from aiogram.types import InputMediaPhoto
+
+
 class Category:
     def __repr__(self):
         return f"CategoryObject: {self._name}"
 
-    def __init__(self,  category_id: int, name: str):
+    def __init__(self,  category_id: int, name: str, picture_url=None):
         self.__id = category_id
         self._name = name
         self.__products = {}
+
+        if picture_url is not None:
+            with open(picture_url, "rb") as picture:
+                self.__picture = InputMediaPhoto(picture)
+        else:
+            self.__picture = None
 
     def get_id(self):
         return self.__id
@@ -19,9 +28,16 @@ class Category:
     def get_products(self):
         return self.__products
 
+    def get_product_ids(self):
+        ids = [str(key) for key in self.__products.keys()]
+        return ids
+
     def get_product(self, product_id):
         if product_id in self.__products.keys():
             return self.__products[f"{product_id}"]
+
+    def get_picture(self):
+        return self.__picture
 
 
 class Product:

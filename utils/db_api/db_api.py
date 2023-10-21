@@ -3,6 +3,7 @@ from aiogram.types import User
 from datetime import date
 import asyncpg
 
+DEFAULT_ROLE = "user"
 
 class DataBaseManager:
     def __init__(self, config):
@@ -28,9 +29,8 @@ class PostgresDataBaseManager(DataBaseManager):
         "username" VARCHAR (50),
         "first_name" VARCHAR (50),
         "last_name" VARCHAR (50),
-        "role" VARCHAR (50) NOT NULL DEFAULT SET 'user',
-        "register_date" DATE NOT NULL DEFAULT SET '{today}'
-        );
+        "role" VARCHAR(50) NOT NULL DEFAULT '{DEFAULT_ROLE}',
+        "register_date" DATE NOT NULL DEFAULT '{today}');
         """
         await self.connection.execute(users_table_sql)
 
@@ -38,7 +38,8 @@ class PostgresDataBaseManager(DataBaseManager):
         categories_table_sql = """
         CREATE TABLE IF NOT EXISTS categories(
         "id" serial PRIMARY KEY,
-        "name" VARCHAR(50) NOT NULL);
+        "name" VARCHAR(50) NOT NULL,
+        "picture_url" TEXT);
         """
         await self.connection.execute(categories_table_sql)
 
@@ -50,7 +51,7 @@ class PostgresDataBaseManager(DataBaseManager):
         "name" VARCHAR(50) NOT NULL,
         "cost" VARCHAR(50) NOT NULL,
         "description" TEXT,
-        "product_picture" TEXT,
+        "picture_url" TEXT,
         FOREIGN KEY (category_id) REFERENCES categories(id));
         """
         await self.connection.execute(products_table_sql)
@@ -110,7 +111,7 @@ class PostgresDataBaseManager(DataBaseManager):
         """
         fetch_result = await self.connection.fetch(get_category_list_sql)
         categories = [
-            Category(category_id=category.get("id"), name=category.get("name"))
+            Category(category_id=category.get("id"), name=category.get("name"), picture_url=category.get("picture_url"))
             for category in fetch_result
         ]
 
@@ -143,7 +144,7 @@ class PostgresDataBaseManager(DataBaseManager):
             name=product_info.get("name"),
             cost=product_info.get("cost"),
             description=product_info.get("description"),
-            product_picture=product_info.get("product_picture")
+            product_picture=product_info.get("picture_url")
         )
 
         return product
@@ -155,9 +156,4 @@ class PostgresDataBaseManager(DataBaseManager):
         database_record = await self.connection.fetchrow(get_products_count_in_category_sql)
         count = int(database_record.get("count"))
         return count
-
-
-
-
-
 

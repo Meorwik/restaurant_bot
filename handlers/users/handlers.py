@@ -12,7 +12,7 @@ from loader import dp, database_manager
 from states.states import StateGroup
 from aiogram import types
 
-PRODUCT_LIST_ROW_WIDTH = 3
+PRODUCT_LIST_ROW_WIDTH = 2
 CATEGORY_LIST_ROW_WIDTH = 2
 PRODUCT_INTERACTION_ROW_WIDTH = 1
 
@@ -40,7 +40,7 @@ async def handle_main_menu(call: types.CallbackQuery, state: FSMContext):
     contact_us_callback = MainMenu.get_contact_us_callback()
 
     async with state.proxy() as data:
-        data["current_callback"] = call.data
+        data["To_category_list"] = call.data
 
     if current_callback == categories_callback:
         categories_menu_keyboard = await CategoryMenu(CATEGORY_LIST_ROW_WIDTH).get_keyboard()
@@ -60,9 +60,6 @@ async def handle_main_menu(call: types.CallbackQuery, state: FSMContext):
                 reply_markup=SimpleKeyboardsBuilder.get_developer_info_keyboard()
             )
 
-    else:
-        return True  # ADMIN MENU OPEN
-
 
 # ________________________________CATEGORY MENU HANDLER____________________________________
 @dp.callback_query_handler(lambda call: CategoryMenu.filter_callbacks(call), state=StateGroup.in_market)
@@ -74,10 +71,8 @@ async def handle_category_menu(call: types.CallbackQuery, state: FSMContext):
 
     async with state.proxy() as data:
         data["current_category"] = current_category
-        data["prev_callback"] = data["current_callback"]
-        data["current_callback"] = call.data
-
-        back_callback = data["prev_callback"]
+        back_callback = data["To_category_list"]
+        data["To_product_list"] = call.data
 
     product_menu_keyboard = ProductMenu(
         row_width=PRODUCT_LIST_ROW_WIDTH,
@@ -88,7 +83,12 @@ async def handle_category_menu(call: types.CallbackQuery, state: FSMContext):
     product_list_text = f"Товары категории {current_category.get_name()}"
     product_list_keyboard = await product_menu_keyboard.get_keyboard()
 
-    await reset_shop_picture(call)
+    category_pic = current_category.get_picture()
+    if category_pic is not None:
+        await call.message.edit_media(category_pic)
+    else:
+        await reset_shop_picture(call)
+
     await call.message.edit_caption(
         caption=product_list_text,
         reply_markup=product_list_keyboard
@@ -110,17 +110,15 @@ async def handle_product_menu(call: types.CallbackQuery, state: FSMContext):
 
     async with state.proxy() as data:
         current_category = data["current_category"]
-        data["current_callback"] = call.data
-
-        back_callback = data["prev_callback"]
+        back_callback = data["To_product_list"]
 
     product_interaction_keyboard = await ProductInteractionMenu(
         row_width=PRODUCT_INTERACTION_ROW_WIDTH,
         back_callback=back_callback
     ).get_keyboard()
 
-    for product_id in current_category.get_products().keys():
-        if str(product_id) in call.data:
+    for product_id in current_category.get_product_ids():
+        if product_id in call.data:
             product_to_show = current_category.get_product(product_id)
 
             await call.message.edit_media(InputMediaPhoto(product_to_show.get_product_picture()))

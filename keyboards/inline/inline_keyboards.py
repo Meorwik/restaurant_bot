@@ -219,7 +219,6 @@ class ProductInteractionMenu(Keyboard):
 
     async def _create_keyboard(self):
         buttons: list = []
-        print(self._BACK_CALLBACK_PREFIX)
 
         self._keyboard.add(*buttons)
 
