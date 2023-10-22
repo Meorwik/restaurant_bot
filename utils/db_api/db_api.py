@@ -124,7 +124,8 @@ class PostgresDataBaseManager(DataBaseManager):
         category_data = await self.connection.fetchrow(get_category_sql)
         category_to_return = Category(
             category_id=int(category_data.get("id")),
-            name=category_data.get("name")
+            name=category_data.get("name"),
+            picture_url=category_data.get("picture_url")
         )
 
         category_products = await self.get_product_list_from_category(category_id)

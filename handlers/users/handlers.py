@@ -15,6 +15,7 @@ from aiogram import types
 PRODUCT_LIST_ROW_WIDTH = 2
 CATEGORY_LIST_ROW_WIDTH = 2
 PRODUCT_INTERACTION_ROW_WIDTH = 1
+PARSE_MODE = "Markdown"
 
 
 async def reset_shop_picture(call: types.CallbackQuery):
@@ -44,6 +45,7 @@ async def handle_main_menu(call: types.CallbackQuery, state: FSMContext):
 
     if current_callback == categories_callback:
         categories_menu_keyboard = await CategoryMenu(CATEGORY_LIST_ROW_WIDTH).get_keyboard()
+        await reset_shop_picture(call)
         await call.message.edit_caption(
             caption="🗂 Каталог",
             reply_markup=categories_menu_keyboard
@@ -129,7 +131,7 @@ async def handle_product_menu(call: types.CallbackQuery, state: FSMContext):
                     product_description=product_to_show.get_product_description(),
                     product_cost=product_to_show.get_product_cost()
                 ),
-                parse_mode="Markdown",
+                parse_mode=PARSE_MODE,
                 reply_markup=product_interaction_keyboard
             )
 
