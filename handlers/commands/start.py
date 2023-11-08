@@ -30,10 +30,8 @@ async def open_main_menu(message: types.Message):
 
 @dp.message_handler(CommandStart(), state="*")
 async def bot_start(message: types.Message):
-    await database_manager.set_connection()
     if await database_manager.is_new_user(message.from_user):
         await database_manager.add_user(message.from_user)
-    await database_manager.close_connection()
 
     main_menu_keyboard = MainMenu(MAIN_MENU_ROW_WIDTH)
     keyboard = await main_menu_keyboard.get_keyboard()

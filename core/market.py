@@ -19,7 +19,7 @@ class Category:
         return self.__id
 
     def add_product(self, product):
-        self.__products[f"{product.get_product_id()}"] = product
+        self.__products[f"{product.get_id()}"] = product
 
     def get_name(self):
         return self._name
@@ -47,19 +47,19 @@ class Product:
         self.__description = description
         self.__product_picture = product_picture
 
-    def get_product_id(self):
+    def get_id(self):
         return self.__id
 
-    def get_product_cost(self):
+    def get_cost(self):
         return self.__cost
 
-    def get_product_name(self):
+    def get_name(self):
         return self.__name
 
-    def get_product_description(self):
+    def get_description(self):
         return self.__description
 
-    def get_product_picture(self):
+    def get_picture(self):
         return self.__product_picture
 
 

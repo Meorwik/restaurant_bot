@@ -3,19 +3,19 @@ from keyboards.inline.inline_keyboards import \
     MainMenu, \
     ProductMenu, \
     ProductInteractionMenu, \
-    SimpleKeyboardsBuilder, \
-    Keyboard
-from handlers.commands.start import open_main_menu, SHOP_PIC_PATH
+    SimpleKeyboards, \
+    Keyboard,\
+    PageableKeyboard
+from handlers.commands.start import open_main_menu, SHOP_PIC_PATH, MAIN_MENU_ROW_WIDTH
 from aiogram.dispatcher import FSMContext
 from aiogram.types import InputMediaPhoto
 from loader import dp, database_manager
 from states.states import StateGroup
 from aiogram import types
 
-PRODUCT_LIST_ROW_WIDTH = 2
+PRODUCT_LIST_ROW_WIDTH = 1
 CATEGORY_LIST_ROW_WIDTH = 2
 PRODUCT_INTERACTION_ROW_WIDTH = 1
-PARSE_MODE = "Markdown"
 
 
 async def reset_shop_picture(call: types.CallbackQuery):
@@ -24,27 +24,60 @@ async def reset_shop_picture(call: types.CallbackQuery):
 
 
 # ________________________________BACK BUTTONS HANDLER____________________________________
-@dp.callback_query_handler(
-    lambda call: Keyboard.filter_back_button_callback(call) or
-    SimpleKeyboardsBuilder.filter_back_button_callback(call),
-    state="*"
-)
+@dp.callback_query_handler(lambda call: Keyboard.filter_back_button_callback(call), state="*")
 async def handle_back_callbacks(call: types.CallbackQuery):
     await open_main_menu(call.message)
+
+
+# ________________________________PAGE BUTTONS HANDLER____________________________________
+@dp.callback_query_handler(lambda call: PageableKeyboard.filter_page_callbacks(call), state=StateGroup.in_market)
+async def handle_page_buttons(call: types.CallbackQuery, state: FSMContext):
+    current_menu = None
+    async with state.proxy() as data:
+        if "Categories_menu" in data:
+            category_menu: PageableKeyboard = data["Categories_menu"]
+        if "Product_menu" in data:
+            product_menu: PageableKeyboard = data["Product_menu"]
+
+    if await category_menu.get_menu_level() in call.data:
+        current_menu = category_menu
+
+    elif await product_menu.get_menu_level() in call.data:
+        current_menu = product_menu
+
+    if call.data == current_menu.get_previous_page_callback():
+        current_menu.open_prev_page()
+
+    elif call.data == current_menu.get_next_page_callback():
+        current_menu.open_next_page()
+
+    async with state.proxy() as data:
+        if "Categories_menu" in data:
+            if await current_menu.get_menu_level() == await category_menu.get_menu_level():
+                data["Categories_menu"] = current_menu
+
+        if "Product_menu" in data:
+            if await current_menu.get_menu_level() == await product_menu.get_menu_level():
+                data["Product_menu"] = current_menu
+
+    await call.message.edit_reply_markup(await current_menu.get_keyboard())
 
 
 # ________________________________MAIN MENU HANDLER____________________________________
 @dp.callback_query_handler(lambda call: MainMenu.filter_callbacks(call), state=StateGroup.in_market)
 async def handle_main_menu(call: types.CallbackQuery, state: FSMContext):
-    current_callback = MainMenu.get_current_callback(call)
-    categories_callback = MainMenu.get_categories_callback()
-    contact_us_callback = MainMenu.get_contact_us_callback()
-
-    async with state.proxy() as data:
-        data["To_category_list"] = call.data
+    main_menu = MainMenu(MAIN_MENU_ROW_WIDTH)
+    current_callback = main_menu.get_current_callback(call)
+    categories_callback = main_menu.categories_callback
+    contact_us_callback = main_menu.contact_us_callback
 
     if current_callback == categories_callback:
-        categories_menu_keyboard = await CategoryMenu(CATEGORY_LIST_ROW_WIDTH).get_keyboard()
+        category_menu = CategoryMenu(CATEGORY_LIST_ROW_WIDTH)
+        categories_menu_keyboard = await category_menu.get_keyboard()
+        async with state.proxy() as data:
+            data["To_category_list"] = call.data
+            data["Categories_menu"] = category_menu
+
         await reset_shop_picture(call)
         await call.message.edit_caption(
             caption="🗂 Каталог",
@@ -59,31 +92,26 @@ async def handle_main_menu(call: types.CallbackQuery, state: FSMContext):
             await call.message.edit_media(InputMediaPhoto(picture))
             await call.message.edit_caption(
                 caption=about_developer_text,
-                reply_markup=SimpleKeyboardsBuilder.get_developer_info_keyboard()
+                reply_markup=SimpleKeyboards().get_developer_info_keyboard()
             )
 
 
 # ________________________________CATEGORY MENU HANDLER____________________________________
 @dp.callback_query_handler(lambda call: CategoryMenu.filter_callbacks(call), state=StateGroup.in_market)
 async def handle_category_menu(call: types.CallbackQuery, state: FSMContext):
-    await database_manager.set_connection()
     category_id = await CategoryMenu.get_current_category_id(call)
     current_category = await database_manager.get_category_with_products(category_id=category_id)
-    await database_manager.close_connection()
 
     async with state.proxy() as data:
         data["current_category"] = current_category
         back_callback = data["To_category_list"]
         data["To_product_list"] = call.data
 
-    product_menu_keyboard = ProductMenu(
+    product_menu = ProductMenu(
         row_width=PRODUCT_LIST_ROW_WIDTH,
         category=current_category,
         back_callback=back_callback
     )
-
-    product_list_text = f"Товары категории {current_category.get_name()}"
-    product_list_keyboard = await product_menu_keyboard.get_keyboard()
 
     category_pic = current_category.get_picture()
     if category_pic is not None:
@@ -91,9 +119,12 @@ async def handle_category_menu(call: types.CallbackQuery, state: FSMContext):
     else:
         await reset_shop_picture(call)
 
+    async with state.proxy() as data:
+        data["Product_menu"] = product_menu
+
     await call.message.edit_caption(
-        caption=product_list_text,
-        reply_markup=product_list_keyboard
+        caption=f"<b>Выбранная категория:</b> <em>{current_category.get_name()}</em>\n\n⬇️Список товаров⬇️",
+        reply_markup=await product_menu.get_keyboard()
     )
 
 
@@ -101,13 +132,14 @@ async def handle_category_menu(call: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda call: ProductMenu.filter_callbacks(call), state=StateGroup.in_market)
 async def handle_product_menu(call: types.CallbackQuery, state: FSMContext):
     product_showcase_template = """
-        Товар №**{product_id}**
+    Товар №<b>{product_id}</b>
 
-        **{product_name}**
+    Название: <b>{product_name}</b>
+    
+    Описание: 
+    <em>{product_description}</em>
 
-        __{product_description}__
-
-        ЦЕНА: {product_cost} Тг
+    ЦЕНА: <b>{product_cost} Тг</b>
     """
 
     async with state.proxy() as data:
@@ -116,22 +148,20 @@ async def handle_product_menu(call: types.CallbackQuery, state: FSMContext):
 
     product_interaction_keyboard = await ProductInteractionMenu(
         row_width=PRODUCT_INTERACTION_ROW_WIDTH,
-        back_callback=back_callback
-    ).get_keyboard()
+        back_callback=back_callback).get_keyboard()
 
     for product_id in current_category.get_product_ids():
         if product_id in call.data:
             product_to_show = current_category.get_product(product_id)
 
-            await call.message.edit_media(InputMediaPhoto(product_to_show.get_product_picture()))
+            await call.message.edit_media(InputMediaPhoto(product_to_show.get_picture()))
             await call.message.edit_caption(
                 caption=product_showcase_template.format(
-                    product_id=product_to_show.get_product_id(),
-                    product_name=product_to_show.get_product_name(),
-                    product_description=product_to_show.get_product_description(),
-                    product_cost=product_to_show.get_product_cost()
+                    product_id=product_to_show.get_id(),
+                    product_name=product_to_show.get_name(),
+                    product_description=product_to_show.get_description(),
+                    product_cost=product_to_show.get_cost()
                 ),
-                parse_mode=PARSE_MODE,
                 reply_markup=product_interaction_keyboard
             )
 
