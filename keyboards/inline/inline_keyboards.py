@@ -131,20 +131,20 @@ class PageableKeyboard(Keyboard):
     def open_prev_page(self):
         if self._current_page == self.__MIN_PAGE_NUMBER:
             self._current_page = self._max_page_count
-            self.__separator = len(self._buttons_storage) - self._max_elements_on_page
+            self.__separator = self._max_elements_on_page
         else:
             self._current_page -= 1
             self.__separator -= self._max_elements_on_page
 
     def __init__(self, row_width, max_elements_on_page=5):
         super().__init__(row_width=row_width)
-        self._max_page_count = None
         self._max_elements_on_page = max_elements_on_page
         self._current_page = 1
         self.__separator = 0
         self._buttons_storage = []
+        self._max_page_count = None
 
-    def _set_max_pages_count(self):
+    def _set_max_page_count(self):
         self._max_page_count = self.__count_max_pages()
 
     def _create_page_buttons(self):
@@ -203,7 +203,7 @@ class CategoryMenu(PageableKeyboard):
             await self.__create_categories_buttons()
 
             if categories_count > self.__MAX_CATEGORIES_COUNT_ON_PAGE:
-                self._set_max_pages_count()
+                self._set_max_page_count()
                 self._keyboard.add(*self.get_buttons_to_show())
                 self._create_page_buttons()
 
@@ -239,7 +239,7 @@ class ProductMenu(PageableKeyboard):
             await self.__create_products_buttons()
 
             if products_count > self.__MAX_PRODUCTS_COUNT_ON_PAGE:
-                self._set_max_pages_count()
+                self._set_max_page_count()
                 self._keyboard.add(*self.get_buttons_to_show())
                 self._create_page_buttons()
 

@@ -119,12 +119,14 @@ async def handle_category_menu(call: types.CallbackQuery, state: FSMContext):
     else:
         await reset_shop_picture(call)
 
+    product_menu_keyboard = await product_menu.get_keyboard()
+
     async with state.proxy() as data:
         data["Product_menu"] = product_menu
 
     await call.message.edit_caption(
         caption=f"<b>Выбранная категория:</b> <em>{current_category.get_name()}</em>\n\n⬇️Список товаров⬇️",
-        reply_markup=await product_menu.get_keyboard()
+        reply_markup=product_menu_keyboard
     )
 
 
