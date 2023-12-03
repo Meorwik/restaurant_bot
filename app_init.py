@@ -3,6 +3,7 @@ from loader import database_manager
 
 async def init_database_tables():
     await database_manager.create_users_table()
+    await database_manager.create_user_baskets_table()
     await database_manager.create_categories_table()
     await database_manager.create_products_table()
 

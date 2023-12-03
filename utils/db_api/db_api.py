@@ -1,5 +1,6 @@
+from utils.development_tools.tools import JsonTool
+from core.market import Category, Product, Basket, BasketData
 from utils.misc.logging import DATABASE_LOGGER
-from core.market import Category, Product
 from aiogram.types import User
 import asyncpg
 
@@ -12,12 +13,39 @@ class DataBaseManager:
         self.pool = None
 
     async def init_pool(self):
-        self.pool = await asyncpg.create_pool(self.config)
+        self.pool: asyncpg.Pool = await asyncpg.create_pool(self.config)
         if bool(self.pool):
             DATABASE_LOGGER.info(msg="DATABASE: pool started")
 
 
 class PostgresDataBaseManager(DataBaseManager):
+    async def get_last_value_data(self, table_name: str) -> int:
+        """
+        Method returns last value sequence from specified table
+        :param table_name:
+        :return: <Record lastval>
+        """
+
+        id_seq_sql = f"SELECT LASTVAL() FROM {table_name};"
+
+        id_seq = await self.pool.fetchrow(id_seq_sql)
+        id_seq = int(id_seq.get('lastval'))
+        return id_seq
+
+    """
+    ------------------------CREATING TABLES SECTION OPEN--------------------------
+    """
+
+    async def create_user_baskets_table(self):
+        create_user_baskets_table_sql = """
+        CREATE TABLE IF NOT EXISTS baskets(
+        "id" serial PRIMARY KEY,
+        "user_id" INTEGER UNIQUE NOT NULL,
+        "basket_info" JSONB 
+        );
+        """
+        await self.pool.execute(create_user_baskets_table_sql)
+
     async def create_users_table(self):
         users_table_sql = f"""
         CREATE TABLE IF NOT EXISTS users(
@@ -49,16 +77,39 @@ class PostgresDataBaseManager(DataBaseManager):
         "cost" VARCHAR(50) NOT NULL,
         "description" TEXT,
         "picture_url" TEXT,
+        "quantity_on_stock" VARCHAR(35),
         FOREIGN KEY (category_id) REFERENCES categories(id));
         """
         await self.pool.execute(products_table_sql)
 
-    async def add_user(self, user: User):
+    """
+    ------------------------CREATING TABLES SECTION CLOSE--------------------------
+    
+    
+    
+    ------------------------USERS TABLE METHODS SECTION OPEN--------------------------
+    """
+
+    async def add_user(self, user: User) -> int:
+        """
+        Method 'add_user' :returns the last id sequence where user was inserted
+        :param user: User
+        :return: int
+        """
         add_new_user_sql = f"""
         INSERT INTO users (user_id, username, first_name, last_name) 
-        VALUES ('{user.id}', '{user.username}', '{user.first_name}', '{user.last_name}')
+        VALUES ('{user.id}', '{user.username}', '{user.first_name}', '{user.last_name}');
         """
         await self.pool.execute(add_new_user_sql)
+
+        return await self.get_last_value_data("users")
+
+    async def get_user_id(self, user_id) -> int:
+        get_user_id_sql = f"""
+        SELECT id FROM users WHERE user_id = '{user_id}'
+        """
+        result = await self.pool.fetchrow(get_user_id_sql)
+        return int(result.get("id"))
 
     async def is_new_user(self, user: User) -> bool:
         get_user_sql = f"""
@@ -73,6 +124,13 @@ class PostgresDataBaseManager(DataBaseManager):
         """
         result = await self.pool.fetch(is_admin_sql)
         return bool(result)
+
+    """
+    ------------------------USERS TABLE METHODS SECTION CLOSE--------------------------
+    
+    
+    ---------------CATEGORIES AND PRODUCTS TABLE METHODS SECTION OPEN------------------
+    """
 
     async def get_categories_count(self) -> int:
         get_categories_count_sql = """
@@ -147,11 +205,50 @@ class PostgresDataBaseManager(DataBaseManager):
 
         return product
 
-    async def count_products_in_category(self, category_id: int) -> int:
-        get_products_count_in_category_sql = f"""
-        SELECT COUNT(id) FROM products WHERE category_id = {category_id}
-        """
-        database_record = await self.pool.fetchrow(get_products_count_in_category_sql)
-        count = int(database_record.get("count"))
-        return count
+    """
+    ---------------CATEGORIES AND PRODUCTS TABLE METHODS SECTION CLOSE------------------
+    
+    
+    ------------------------BASKET TABLE METHODS SECTION OPEN----------------------------
+    """
 
+    async def create_new_basket(self, user_id: int):
+        empty_json = JsonTool.serialize(Basket.get_json_empty_structure())
+        create_new_basket_sql = f"""
+        INSERT INTO baskets (user_id, basket_info) VALUES ({user_id}, '{empty_json}')
+        """
+        await self.pool.execute(create_new_basket_sql)
+
+    async def get_user_basket(self, user_id: int):
+        get_user_basket_info_sql = f"""
+        SELECT basket_info FROM baskets WHERE user_id = {user_id}
+        """
+        result = await self.pool.fetchrow(get_user_basket_info_sql)
+        if result:
+            basket_info = JsonTool.deserialize(result.get("basket_info"))
+            basket_data_object = BasketData(
+                products=basket_info["products"],
+                total_cost=basket_info["total_cost"]
+            )
+            return Basket(basket_data_object)
+
+        else:
+            return None
+
+    async def update_user_basket(self, basket: Basket, user_id: int):
+        basket_data = BasketData(
+            products=basket.products,
+            total_cost=basket.total_cost
+        )
+        basket = JsonTool.serialize(basket_data)
+        update_user_basket_sql = f"""
+        UPDATE baskets SET basket_info = '{basket}' WHERE user_id = '{user_id}'
+        """
+        await self.pool.execute(update_user_basket_sql)
+
+    async def clear_basket(self, user_id: int):
+        empty_json = JsonTool.serialize(Basket.get_json_empty_structure())
+        clear_basket_sql = f"""
+        UPDATE baskets SET basket_info = '{empty_json}' WHERE user_id = '{user_id}'
+        """
+        await self.pool.execute(clear_basket_sql)
