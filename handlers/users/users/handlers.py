@@ -254,7 +254,8 @@ async def handle_quantity_selection_menu(call: types.CallbackQuery, state: FSMCo
 
         quantity_selection_menu: QuantitySelectionMenu = data["quantity_selection_menu"]
         current_product: Product = data["current_product"]
-        quantity_selection_status = data["quantity_selection_status"]
+        if "quantity_selection_status" in data:
+            quantity_selection_status = data["quantity_selection_status"]
 
     plus_one_callback = quantity_selection_menu.plus_one_callback
     minus_one_callback = quantity_selection_menu.minus_one_callback
