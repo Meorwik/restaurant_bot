@@ -79,17 +79,18 @@ class ProductData:
         self.quantity = value
         self.total_cost = self.quantity * self.cost
 
+
 class ProductStorage:
 
     def __init__(self):
-        self.__products: list[Union[Product, ProductData]] = []
+        self.__products: list = []
 
     @property
     def products(self):
         return self.__products
 
     @products.setter
-    def products(self, value: list[ProductData]):
+    def products(self, value: list):
         self.__products = value
 
     def is_empty(self):
@@ -137,7 +138,7 @@ class Category(ProductStorage):
 
 @dataclass()
 class BasketData:
-    products: list[dict] = field(default_factory=list)
+    products: list = field(default_factory=list)
     total_cost: int = 0
 
     def transform_to_product_data(self):
