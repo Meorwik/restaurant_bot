@@ -289,8 +289,9 @@ async def handle_quantity_selection_menu(call: types.CallbackQuery, state: FSMCo
 
         await database_manager.update_user_basket(basket, user_id)
         await call.answer("✅ Готово! ✅")
+        profile_keyboard = await ProfileMenu(PROFILE_MENU_ROW_WIDTH, back_callback).get_keyboard()
         await call.message.edit_reply_markup(
-            reply_markup=SimpleKeyboards().get_done_button(back_callback)
+            reply_markup=profile_keyboard
         )
 
     async with state.proxy() as data:
@@ -300,8 +301,14 @@ async def handle_quantity_selection_menu(call: types.CallbackQuery, state: FSMCo
 # ______________________________ PROFILE MENU HANDLER ____________________________________________
 @dp.callback_query_handler(lambda call: ProfileMenu.filter_callbacks(call), state=StateGroup.in_market)
 async def handle_profile_menu(call: types.CallbackQuery, state: FSMContext):
+    await call.message.edit_media(await get_user_profile_photo(call))
+
     async with state.proxy() as data:
-        back_callback = data["To_profile_menu"]
+        if "To_profile_menu" in data:
+            back_callback = data["To_profile_menu"]
+
+        elif "To_product_list" in data:
+            back_callback = data["To_product_list"]
 
     profile_menu = ProfileMenu(PROFILE_MENU_ROW_WIDTH)
     current_callback = profile_menu.get_current_callback(call)
@@ -332,10 +339,14 @@ async def handle_profile_menu(call: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda call: BasketInteractionMenu.filter_callbacks(call), state=StateGroup.in_market)
 async def handle_basket_interaction_menu(call: types.CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
-        back_to_profile_callback = data["To_profile_menu"]
+        if "To_profile_menu" in data:
+            back_callback = data["To_profile_menu"]
+        elif "To_product_list" in data:
+            back_callback = data["To_product_list"]
+
         back_to_basket_callback = data["To_basket_menu"]
 
-    basket_interaction_menu = BasketInteractionMenu(BASKET_INTERACTION_MENU_ROW_WIDTH, back_to_profile_callback)
+    basket_interaction_menu = BasketInteractionMenu(BASKET_INTERACTION_MENU_ROW_WIDTH, back_callback)
     current_callback = basket_interaction_menu.get_current_callback(call)
     user_id = await database_manager.get_user_id(call.from_user.id)
     basket: Basket = await database_manager.get_user_basket(user_id)
@@ -383,7 +394,7 @@ async def handle_basket_interaction_menu(call: types.CallbackQuery, state: FSMCo
         await database_manager.clear_basket(user_id)
         await call.message.edit_caption(
             caption=Basket.get_empty_basket_case_text(),
-            reply_markup=SimpleKeyboards().get_back_button(back_to_profile_callback)
+            reply_markup=SimpleKeyboards().get_back_button(back_callback)
         )
 
     async with state.proxy() as data:

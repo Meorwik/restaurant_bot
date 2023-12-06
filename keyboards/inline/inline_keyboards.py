@@ -104,22 +104,14 @@ class SimpleKeyboards(Keyboard):
         self._add_back_button()
         return self._keyboard
 
-    def get_done_button(self, back_callback=None):
-        done_button_text = "Готово ☑️"
+    def get_back_to_products_button(self, back_callback=None):
+        back_to_products_button_text = "Продолжить покупки 🔙"
 
         if back_callback is not None:
-            self._keyboard.add(InlineKeyboardButton(
-                text=done_button_text,
+            return InlineKeyboardButton(
+                text=back_to_products_button_text,
                 callback_data=back_callback
-            ))
-
-        else:
-            self._keyboard.add(InlineKeyboardButton(
-                text=done_button_text,
-                callback_data=self._back_callback
-            ))
-
-        return self._keyboard
+            )
 
     def get_back_button(self, back_callback: str):
         self._keyboard.add(
@@ -420,6 +412,11 @@ class ProfileMenu(FacadeKeyboard):
     _MENU_FACADE = {
         "🛍 Посмотреть корзину": f"{_menu_level}{Keyboard._CALLBACK_SEPARATOR}{__OPEN_BASKET_CALLBACK}",
     }
+
+    def __init__(self, row_width, back_callback: str = None):
+        super().__init__(row_width)
+        if back_callback is not None:
+            self._back_callback = back_callback
 
     @property
     def open_basket_callback(self):

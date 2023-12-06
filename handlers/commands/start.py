@@ -5,7 +5,7 @@ from loader import dp, database_manager
 from states.states import StateGroup
 from aiogram import types
 
-SHOP_PIC_PATH = "data/pictures/images.png"
+SHOP_PIC_PATH = "data/pictures/pizza_hut.png"
 MAIN_MENU_ROW_WIDTH = 1
 
 
