@@ -284,6 +284,8 @@ async def handle_quantity_selection_menu(call: types.CallbackQuery, state: FSMCo
             basket.replace_product(current_product.id, product_to_modify)
             back_callback = quantity_selection_menu.get_back_callback()
             await call.message.edit_caption(basket.get_showcase_text(product_to_modify.id))
+            async with state.proxy() as data:
+                data["quantity_selection_status"] = None
 
         await database_manager.update_user_basket(basket, user_id)
         await call.answer("✅ Готово! ✅")
