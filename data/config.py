@@ -1,12 +1,12 @@
-import json
+import os
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
-with open('data/config.ini', 'r') as file:
-    tg_data = json.load(file)
+PAYMENT_TOKEN = os.environ.get("ROBOKASSA_TOKEN")
 
-admins = []
-for admin in tg_data["admins"].split():
-    admins.append(admin)
 
-BOT_TOKEN = tg_data["token"]
+CURRENCY_RATIO = {
+    "RUB": 100,
+    "KZT": 100
+}
 
-ADMINS = admins 
+CURRENT_CURRENCY = os.environ.get("CURRENT_CURRENCY")

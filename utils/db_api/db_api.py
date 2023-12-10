@@ -45,6 +45,7 @@ class PostgresDataBaseManager(DataBaseManager):
         );
         """
         await self.pool.execute(create_user_baskets_table_sql)
+        return True
 
     async def create_users_table(self):
         users_table_sql = f"""
@@ -58,6 +59,7 @@ class PostgresDataBaseManager(DataBaseManager):
         "register_date" DATE NOT NULL DEFAULT CURRENT_DATE);
         """
         await self.pool.execute(users_table_sql)
+        return True
 
     async def create_categories_table(self):
         categories_table_sql = """
@@ -67,6 +69,7 @@ class PostgresDataBaseManager(DataBaseManager):
         "picture_url" TEXT);
         """
         await self.pool.execute(categories_table_sql)
+        return True
 
     async def create_products_table(self):
         products_table_sql = """
@@ -81,6 +84,7 @@ class PostgresDataBaseManager(DataBaseManager):
         FOREIGN KEY (category_id) REFERENCES categories(id));
         """
         await self.pool.execute(products_table_sql)
+        return True
 
     """
     ------------------------CREATING TABLES SECTION CLOSE--------------------------
@@ -132,16 +136,6 @@ class PostgresDataBaseManager(DataBaseManager):
     ---------------CATEGORIES AND PRODUCTS TABLE METHODS SECTION OPEN------------------
     """
 
-    async def get_categories_count(self) -> int:
-        get_categories_count_sql = """
-        SELECT COUNT(id) FROM categories
-        """
-        result: asyncpg.Record = await self.pool.fetchrow(
-            get_categories_count_sql
-        )
-        count = int(result.get("count"))
-        return count
-
     async def get_product_list_from_category(self, category_id: int) -> list:
         get_category_products_sql = f"""
         SELECT * FROM products WHERE category_id = {category_id}
@@ -190,20 +184,20 @@ class PostgresDataBaseManager(DataBaseManager):
 
         return category_to_return
 
-    async def get_product(self, product_id: int) -> Product:
-        get_product_sql = f"""
-        SELECT * FROM products WHERE id = {product_id}
+    async def is_available_product(self, product_id: str) -> bool:
+        is_available_product_sql = f"""
+        SELECT is_active FROM products WHERE id = '{product_id}'
         """
-        product_info = await self.pool.fetchrow(get_product_sql)
-        product = Product(
-            product_id=int(product_info.get("id")),
-            name=product_info.get("name"),
-            cost=product_info.get("cost"),
-            description=product_info.get("description"),
-            product_picture=product_info.get("picture_url")
-        )
 
-        return product
+        result = await self.pool.fetch(is_available_product_sql)
+        return result[0].get('is_active')
+
+    async def update_product_status(self, product_id, status: bool):
+        update_product_status_sql = f"""
+        UPDATE products SET is_active = '{status}' WHERE id = {product_id}
+        """
+
+        await self.pool.execute(update_product_status_sql)
 
     """
     ---------------CATEGORIES AND PRODUCTS TABLE METHODS SECTION CLOSE------------------
@@ -219,7 +213,7 @@ class PostgresDataBaseManager(DataBaseManager):
         """
         await self.pool.execute(create_new_basket_sql)
 
-    async def get_user_basket(self, user_id: int):
+    async def get_user_basket(self, user_id: int) -> Basket:
         get_user_basket_info_sql = f"""
         SELECT basket_info FROM baskets WHERE user_id = {user_id}
         """
@@ -233,7 +227,7 @@ class PostgresDataBaseManager(DataBaseManager):
             return Basket(basket_data_object)
 
         else:
-            return None
+            raise Exception("INVALID USER ID - NO SUCH BASKET")
 
     async def update_user_basket(self, basket: Basket, user_id: int):
         basket_data = BasketData(
@@ -252,3 +246,4 @@ class PostgresDataBaseManager(DataBaseManager):
         UPDATE baskets SET basket_info = '{empty_json}' WHERE user_id = '{user_id}'
         """
         await self.pool.execute(clear_basket_sql)
+

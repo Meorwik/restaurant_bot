@@ -1,18 +1,11 @@
 from keyboards.inline.inline_keyboards import \
-    CategoryMenu, \
-    MainMenu, \
-    ProductMenu, \
-    ProductInteractionMenu, \
-    SimpleKeyboards, \
-    Keyboard,\
-    PageableKeyboard, \
-    ProfileMenu,\
-    BasketInteractionMenu, \
-    QuantitySelectionMenu, \
-    BasketProductMenu
+    CategoryMenu, MainMenu, ProductMenu, ProductInteractionMenu, SimpleKeyboards, Keyboard, \
+    PageableKeyboard, ProfileMenu, BasketInteractionMenu, QuantitySelectionMenu, BasketProductMenu
 from handlers.commands.start import open_main_menu, SHOP_PIC_PATH, MAIN_MENU_ROW_WIDTH
-from core.market import Product, Category, Basket
-from loader import dp, database_manager, bot
+from aiogram.utils.exceptions import MessageCantBeEdited
+from loader import dp, database_manager, bot, payments_manager
+from core.market import Product, Category, Basket, ProductData
+from aiogram.types.message import ContentType
 from utils.misc.logging import CLIENT_LOGGER
 from aiogram.dispatcher import FSMContext
 from aiogram.types import InputMediaPhoto
@@ -24,6 +17,8 @@ BASKET_INTERACTION_MENU_ROW_WIDTH = 1
 PRODUCT_LIST_ROW_WIDTH = 1
 CATEGORY_LIST_ROW_WIDTH = 2
 PRODUCT_INTERACTION_ROW_WIDTH = 1
+SUCCESSFUL_PAYMENT_PICTURE_PATH = "data/pictures/successfu_paymentl.png"
+ERROR_404_PICTURE_PATH = "data/pictures/404_error.jpg"
 
 
 async def get_user_profile_photo(call: types.CallbackQuery) -> InputMediaPhoto:
@@ -37,6 +32,49 @@ async def get_user_profile_photo(call: types.CallbackQuery) -> InputMediaPhoto:
 async def reset_shop_picture(call: types.CallbackQuery):
     with open(SHOP_PIC_PATH, "rb") as shop_pic:
         await call.message.edit_media(InputMediaPhoto(shop_pic))
+
+
+async def open_basket_menu(call: types.CallbackQuery, state: FSMContext, back_callback: str = None, is_modified: bool = False):
+    async with state.proxy() as data:
+        data["To_basket_menu"] = call.data
+
+    user_id = await database_manager.get_user_id(call.from_user.id)
+    basket: Basket = await database_manager.get_user_basket(user_id)
+    profile_photo = await get_user_profile_photo(call)
+    if not is_modified:
+        try:
+            await call.message.edit_media(profile_photo)
+        except MessageCantBeEdited:
+            pass
+
+    if basket.is_empty():
+        try:
+            await call.message.edit_caption(
+                caption=Basket.get_empty_basket_case_text(),
+                reply_markup=SimpleKeyboards().get_back_button_keyboard(back_callback)
+            )
+        except MessageCantBeEdited:
+            await call.message.answer_photo(
+                photo=profile_photo.media,
+                caption=Basket.get_empty_basket_case_text(),
+                reply_markup=SimpleKeyboards().get_back_button_keyboard(back_callback)
+            )
+            await call.message.delete()
+
+    else:
+        basket_interaction_menu = BasketInteractionMenu(BASKET_INTERACTION_MENU_ROW_WIDTH, back_callback)
+        try:
+            await call.message.edit_caption(
+                caption=basket.get_basket_showcase_text(),
+                reply_markup=await basket_interaction_menu.get_keyboard()
+            )
+        except MessageCantBeEdited:
+            await call.message.answer_photo(
+                photo=profile_photo.media,
+                caption=basket.get_basket_showcase_text(),
+                reply_markup=await basket_interaction_menu.get_keyboard()
+            )
+            await call.message.delete()
 
 
 # ________________________________BACK BUTTONS HANDLER____________________________________
@@ -98,6 +136,7 @@ async def handle_main_menu(call: types.CallbackQuery, state: FSMContext):
     categories_callback = main_menu.categories_callback
     contact_us_callback = main_menu.contact_us_callback
     open_profile_callback = main_menu.open_profile_callback
+    open_basket_callback = main_menu.open_basket_callback
 
     if current_callback == categories_callback:
         category_menu = CategoryMenu(CATEGORY_LIST_ROW_WIDTH)
@@ -125,18 +164,24 @@ async def handle_main_menu(call: types.CallbackQuery, state: FSMContext):
             )
 
     elif current_callback == open_profile_callback:
-        user_id = await database_manager.get_user_id(call.from_user.id)
-        user_profile_text = f"️⚙️ ️<b>Ваш профиль:</b>\n\n<b>Ваш ID:</b> {user_id}\n<b>Ваш телеграм ID:</b> {call.from_user.id}"
         async with state.proxy() as data:
             data["To_profile_menu"] = call.data
+
+        user_id = await database_manager.get_user_id(call.from_user.id)
         profile_menu = ProfileMenu(PROFILE_MENU_ROW_WIDTH)
         profile_photo = await get_user_profile_photo(call)
         await call.message.edit_media(profile_photo)
         await call.message.edit_caption(
-            caption=user_profile_text,
+            caption=profile_menu.get_profile_showcase_template().format(
+                user_id=user_id,
+                telegram_id=call.from_user.id
+            ),
             reply_markup=await profile_menu.get_keyboard(),
             parse_mode=types.ParseMode.HTML
         )
+
+    elif current_callback == open_basket_callback:
+        await open_basket_menu(call, state)
 
 
 # ________________________________CATEGORY MENU HANDLER___________________________________________
@@ -176,16 +221,8 @@ async def handle_category_menu(call: types.CallbackQuery, state: FSMContext):
 # ________________________________PRODUCT MENU HANDLER____________________________________________
 @dp.callback_query_handler(lambda call: ProductMenu.filter_callbacks(call), state=StateGroup.in_market)
 async def handle_product_menu(call: types.CallbackQuery, state: FSMContext):
-    product_showcase_template = """
-    Товар №<b>{product_id}</b>
-
-    Название: <b>{product_name}</b>
-    
-    Описание: 
-    <em>{product_description}</em>
-
-    ЦЕНА: <b>{product_cost} Тг</b>
-    """
+    product_showcase_template = Category.get_product_showcase_template()
+    product_to_show: ProductData = None
 
     async with state.proxy() as data:
         current_category: Category = data["current_category"]
@@ -198,34 +235,49 @@ async def handle_product_menu(call: types.CallbackQuery, state: FSMContext):
 
     for product_id in current_category.get_products_ids():
         if product_id in call.data:
-            product_to_show: Product = current_category.get_product(product_id)
-            if product_to_show is not None:
-                async with state.proxy() as data:
-                    data["current_product"] = product_to_show
+            product_to_show = current_category.get_product(product_id)
+            break
 
-                product_picture = InputMediaPhoto(product_to_show.picture)
-                await call.message.edit_media(product_picture)
-                await call.message.edit_caption(
-                    caption=product_showcase_template.format(
-                        product_id=product_to_show.id,
-                        product_name=product_to_show.name,
-                        product_description=product_to_show.description,
-                        product_cost=product_to_show.cost
-                    ),
-                    reply_markup=product_interaction_keyboard
-                )
+    if product_to_show is not None:
+        async with state.proxy() as data:
+            data["current_product"] = product_to_show
 
-            else:
-                await call.answer("Произошла ошибка!\nКод ошибки: 000 (NONE)")
-                CLIENT_LOGGER.error(msg="PRODUCT EXCEPTION ACCRUED (errorCode: 000) -> None")
+        product_picture = InputMediaPhoto(product_to_show.picture)
+        product_showcase_text = product_showcase_template.format(
+            product_id=product_to_show.id,
+            product_name=product_to_show.name,
+            product_description=product_to_show.description,
+            product_cost=product_to_show.cost
+        )
+
+        try:
+            await call.message.edit_media(product_picture)
+            await call.message.edit_caption(
+                caption=product_showcase_text,
+                reply_markup=product_interaction_keyboard
+            )
+
+        except MessageCantBeEdited:
+            await call.message.answer_photo(
+                photo=product_picture.media,
+                caption=product_showcase_text,
+                reply_markup=product_interaction_keyboard
+            )
+            await call.message.delete()
+
+    else:
+        await call.answer("Произошла ошибка!\nКод ошибки: 000 (NONE)")
+        CLIENT_LOGGER.error(msg="PRODUCT EXCEPTION ACCRUED (errorCode: 000) -> None")
 
 
-# _____________________________PRODUCT INTERACTION MENU HANDLER___________________________________
+# _____________________________PRODUCT INTERACTION MENU HANDLERS___________________________________
 @dp.callback_query_handler(lambda call: ProductInteractionMenu.filter_callbacks(call), state=StateGroup.in_market)
 async def handle_product_interaction_menu(call: types.CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
         back_to_products_menu_callback = data["To_product_list"]
         back_to_product_menu_callback = data["To_current_product"]
+        if "current_product" in data:
+            current_product: Product = data["current_product"]
 
     product_interaction_menu = ProductInteractionMenu(PRODUCT_INTERACTION_ROW_WIDTH, back_to_products_menu_callback)
     current_callback = product_interaction_menu.get_current_callback(call)
@@ -233,10 +285,14 @@ async def handle_product_interaction_menu(call: types.CallbackQuery, state: FSMC
     add_to_basket_callback = product_interaction_menu.add_product_to_basket_callback
 
     if current_callback == buy_now_callback:
-        """
-        BUY NOW FUNCTION 
-        """
-        ...
+        await call.message.delete()
+        invoice = await payments_manager.send_product_invoice(
+            call.from_user.id,
+            current_product,
+            SimpleKeyboards().get_payment_keyboard(current_product.cost, back_to_product_menu_callback)
+        )
+        async with state.proxy() as data:
+            data["current_invoice"] = invoice
 
     elif current_callback == add_to_basket_callback:
         quantity_selection_menu = QuantitySelectionMenu(back_to_product_menu_callback)
@@ -283,7 +339,7 @@ async def handle_quantity_selection_menu(call: types.CallbackQuery, state: FSMCo
             product_to_modify.set_quantity(quantity_selection_menu.current_quantity)
             basket.replace_product(current_product.id, product_to_modify)
             back_callback = quantity_selection_menu.get_back_callback()
-            await call.message.edit_caption(basket.get_showcase_text(product_to_modify.id))
+            await call.message.edit_caption(basket.get_product_showcase_text(product_to_modify.id))
             async with state.proxy() as data:
                 data["quantity_selection_status"] = None
 
@@ -301,7 +357,11 @@ async def handle_quantity_selection_menu(call: types.CallbackQuery, state: FSMCo
 # ______________________________ PROFILE MENU HANDLER ____________________________________________
 @dp.callback_query_handler(lambda call: ProfileMenu.filter_callbacks(call), state=StateGroup.in_market)
 async def handle_profile_menu(call: types.CallbackQuery, state: FSMContext):
-    await call.message.edit_media(await get_user_profile_photo(call))
+    profile_photo = await get_user_profile_photo(call)
+    try:
+        await call.message.edit_media(profile_photo)
+    except MessageCantBeEdited:
+        await call.message.answer_photo(profile_photo.media)
 
     async with state.proxy() as data:
         if "To_profile_menu" in data:
@@ -313,37 +373,23 @@ async def handle_profile_menu(call: types.CallbackQuery, state: FSMContext):
     profile_menu = ProfileMenu(PROFILE_MENU_ROW_WIDTH)
     current_callback = profile_menu.get_current_callback(call)
     basket_callback = profile_menu.open_basket_callback
+    photo_is_modified = True
 
     if current_callback == basket_callback:
-        async with state.proxy() as data:
-            data["To_basket_menu"] = call.data
-
-        user_id = await database_manager.get_user_id(call.from_user.id)
-        basket: Basket = await database_manager.get_user_basket(user_id)
-
-        if basket.is_empty():
-            await call.message.edit_caption(
-                caption=Basket.get_empty_basket_case_text(),
-                reply_markup=SimpleKeyboards().get_back_button(back_callback)
-            )
-
-        else:
-            basket_interaction_menu = BasketInteractionMenu(BASKET_INTERACTION_MENU_ROW_WIDTH, back_callback)
-            await call.message.edit_caption(
-                caption=basket.get_showcase_text(),
-                reply_markup=await basket_interaction_menu.get_keyboard()
-            )
+        await open_basket_menu(call, state, back_callback, photo_is_modified)
 
 
 # ______________________________ BASKET INTERACTION HANDLER _________________________________________
 @dp.callback_query_handler(lambda call: BasketInteractionMenu.filter_callbacks(call), state=StateGroup.in_market)
 async def handle_basket_interaction_menu(call: types.CallbackQuery, state: FSMContext):
+    back_callback = None
     async with state.proxy() as data:
         if "To_profile_menu" in data:
             back_callback = data["To_profile_menu"]
         elif "To_product_list" in data:
             back_callback = data["To_product_list"]
 
+        data["To_basket_product_menu"] = call.data
         back_to_basket_callback = data["To_basket_menu"]
 
     basket_interaction_menu = BasketInteractionMenu(BASKET_INTERACTION_MENU_ROW_WIDTH, back_callback)
@@ -361,16 +407,31 @@ async def handle_basket_interaction_menu(call: types.CallbackQuery, state: FSMCo
     choose_product_text = BasketProductMenu.get_choose_product_text()
 
     if current_callback == buy_all_products_callback:
-        """
-        Here is some logic for buying all basket for all it's cost, now I need to get payments info for continuing
-        """
-        ...
+        await call.message.delete()
+        invoice = await payments_manager.send_basket_invoice(
+            call.from_user.id,
+            basket,
+            SimpleKeyboards().get_payment_keyboard(basket.total_cost, back_to_basket_callback)
+        )
+        async with state.proxy() as data:
+            data["current_invoice"] = invoice
+            data["basket_buying_process"] = True
 
     elif current_callback == buy_one_product_callback:
-        await call.message.edit_caption(
-            caption=choose_product_text,
-            reply_markup=await basket_product_menu.get_keyboard()
-        )
+        try:
+            await call.message.edit_caption(
+                caption=choose_product_text,
+                reply_markup=await basket_product_menu.get_keyboard()
+            )
+        except MessageCantBeEdited:
+            profile_photo = await get_user_profile_photo(call)
+            await call.message.answer_photo(
+                profile_photo.media,
+                caption=choose_product_text,
+                reply_markup=await basket_product_menu.get_keyboard()
+            )
+            await call.message.delete()
+
         async with state.proxy() as data:
             data["action_to_product"] = buy_one_product_callback
 
@@ -394,7 +455,7 @@ async def handle_basket_interaction_menu(call: types.CallbackQuery, state: FSMCo
         await database_manager.clear_basket(user_id)
         await call.message.edit_caption(
             caption=Basket.get_empty_basket_case_text(),
-            reply_markup=SimpleKeyboards().get_back_button(back_callback)
+            reply_markup=SimpleKeyboards().get_back_button_keyboard(back_callback)
         )
 
     async with state.proxy() as data:
@@ -405,6 +466,7 @@ async def handle_basket_interaction_menu(call: types.CallbackQuery, state: FSMCo
 async def handle_basket_product_menu(call: types.CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
         back_to_basket_callback = data["To_basket_menu"]
+        back_to_product_menu_callback = data["To_basket_product_menu"]
 
     basket_interaction_menu = BasketInteractionMenu(BASKET_INTERACTION_MENU_ROW_WIDTH, back_to_basket_callback)
     buy_one_product_callback = basket_interaction_menu.buy_one_product_callback
@@ -418,23 +480,30 @@ async def handle_basket_product_menu(call: types.CallbackQuery, state: FSMContex
 
     for product in basket.products:
         if str(product.id) in call.data:
-            current_product = basket.get_product(product.id)
+            current_product: ProductData = basket.get_product(product.id)
             break
 
     if current_product is not None:
         async with state.proxy() as data:
-            action = data["action_to_product"]
+            data["current_product"] = current_product
+            if "action_to_product" in data:
+                action = data["action_to_product"]
 
     if action == buy_one_product_callback:
-        """
-        Here is some logic for buying all basket for all it's cost, now I need to get payments info for continuing
-        """
-        ...
+        await call.message.delete()
+        invoice = await payments_manager.send_product_invoice(
+            call.from_user.id,
+            current_product,
+            SimpleKeyboards().get_payment_keyboard(str(current_product.total_cost), back_to_product_menu_callback)
+        )
+
+        async with state.proxy() as data:
+            data["current_invoice"] = invoice
 
     elif action == modify_product_quantity_callback:
         quantity_selection_menu = QuantitySelectionMenu(back_to_basket_callback)
         await call.message.edit_caption(
-            caption=basket.get_showcase_text(current_product.id),
+            caption=basket.get_product_showcase_text(current_product.id),
             reply_markup=await quantity_selection_menu.get_keyboard()
         )
         async with state.proxy() as data:
@@ -453,5 +522,100 @@ async def handle_basket_product_menu(call: types.CallbackQuery, state: FSMContex
             "ERROR: 001 (NoneProduct)"
         )
 
+
+@dp.pre_checkout_query_handler(lambda query: True, state=StateGroup.in_market)
+async def pre_checkout_query(pre_checkout: types.PreCheckoutQuery, state: FSMContext):
+    basket_buying_process = False
+    async with state.proxy() as data:
+        if "basket_buying_process" in data:
+            basket_buying_process = data["basket_buying_process"]
+        if "To_basket_product_menu" in data:
+            back_callback = data["To_basket_product_menu"]
+        elif "To_product_list" in data:
+            back_callback = data["To_product_list"]
+        if "current_invoice" in data:
+            invoice: types.Message = data["current_invoice"]
+
+    if not basket_buying_process:
+        async with state.proxy() as data:
+            if "current_product" in data:
+                current_product: ProductData = data["current_product"]
+
+        is_available = await database_manager.is_available_product(current_product.id)
+
+        if is_available:
+            await bot.answer_pre_checkout_query(pre_checkout.id, ok=True)
+        else:
+            await bot.answer_pre_checkout_query(
+                pre_checkout_query_id=pre_checkout.id,
+                ok=False,
+                error_message=f"К сожалению, данного товара ({current_product.name}) пока нет на складе!"
+            )
+
+            with open(ERROR_404_PICTURE_PATH, "rb") as photo:
+                await bot.send_photo(
+                    chat_id=pre_checkout.from_user.id,
+                    photo=photo,
+                    caption="К сожалению, данного товара пока нет на складе!",
+                    reply_markup=SimpleKeyboards().get_back_button_keyboard(back_callback)
+                )
+
+            await current_product.deactivate_product()
+            await database_manager.update_product_status(current_product.id, is_available)
+            await invoice.delete()
+
+    else:
+        async with state.proxy() as data:
+            data["basket_buying_process"] = False
+
+        user_id = await database_manager.get_user_id(pre_checkout.from_user.id)
+        basket: Basket = await database_manager.get_user_basket(user_id)
+        is_ok = True
+        unavailable_product: ProductData = None
+        for product in basket.products:
+            is_available = await database_manager.is_available_product(product.id)
+            if not is_available:
+                is_ok = False
+                unavailable_product = product
+                break
+        if is_ok:
+            await bot.answer_pre_checkout_query(
+                pre_checkout_query_id=pre_checkout.id,
+                ok=is_ok,
+            )
+            await database_manager.clear_basket(user_id)
+        else:
+            await bot.answer_pre_checkout_query(
+                pre_checkout_query_id=pre_checkout.id,
+                ok=False,
+                error_message=f"К сожалению, данного товара ({unavailable_product.name}) пока нет на складе!"
+            )
+
+            with open(ERROR_404_PICTURE_PATH, "rb") as photo:
+                await bot.send_photo(
+                    chat_id=pre_checkout.from_user.id,
+                    photo=photo,
+                    caption="К сожалению, данного товара пока нет на складе!",
+                    reply_markup=SimpleKeyboards().get_back_button_keyboard(back_callback)
+                )
+
+            await invoice.delete()
+
+
+@dp.message_handler(content_types=ContentType.SUCCESSFUL_PAYMENT, state=StateGroup.in_market)
+async def successful_payment(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        if "To_product_list" in data:
+            back_callback = data["To_product_list"]
+        elif "To_basket_menu" in data:
+            back_callback = data["To_basket_menu"]
+
+    amount = message.successful_payment.total_amount // payments_manager.get_currency_ratio()
+    with open(SUCCESSFUL_PAYMENT_PICTURE_PATH, 'rb') as photo:
+        await message.answer_photo(
+            photo=photo,
+            caption=f"Платеж на сумму {amount} {message.successful_payment.currency} прошел успешно!",
+            reply_markup=SimpleKeyboards().get_back_button_keyboard(back_callback)
+        )
 
 

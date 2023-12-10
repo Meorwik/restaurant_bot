@@ -1,10 +1,58 @@
 from utils.development_tools.tools import JsonTool
 from aiogram.types import InputMediaPhoto
 from dataclasses import dataclass, field
-from typing import Union
 
 
-class Product:
+@dataclass()
+class BasketData:
+    products: list = field(default_factory=list)
+    total_cost: int = 0
+
+    def transform_to_product_data(self):
+        return [
+            ProductData(
+                id=product["id"],
+                cost=product["cost"],
+                name=product["name"],
+                quantity=product["quantity"],
+                is_active=product["is_active"],
+                description=product["description"],
+                picture=product["picture"]
+            )
+            for
+            product in self.products
+        ]
+
+
+@dataclass()
+class ProductData:
+    id: int
+    cost: int
+    name: str
+    quantity: int
+    picture: str
+    total_cost: int = field(init=False)
+    description: str = field(default="null")
+    is_active: bool = True
+
+    def __repr__(self):
+        return f"id-({self.id}) ProductDataObject status: {self.is_active}"
+
+    def __post_init__(self):
+        self.total_cost = self.quantity * self.cost
+
+    def set_quantity(self, value: int):
+        self.quantity = value
+        self.total_cost = self.quantity * self.cost
+
+    async def deactivate_product(self):
+        self.__is_active = False
+
+    async def activate_product(self):
+        self.__is_active = True
+
+
+class Product(ProductData):
     def __repr__(self):
         return f"ProductObject: {self.__name}"
 
@@ -14,7 +62,6 @@ class Product:
         self.__name = name
         self.__description = description
         self.__picture = product_picture
-        self.__is_active: bool = True
 
         if config is not None:
             for key, value in config.items():
@@ -52,51 +99,38 @@ class Product:
         if value is not None:
             self.__picture = value
 
-    @property
-    def is_active(self) -> bool:
-        return self.__is_active
-
-    def deactivate_product(self):
-        self.__is_active = False
-
-    def activate_product(self):
-        self.__is_active = True
-
-
-@dataclass()
-class ProductData:
-    id: int
-    cost: int
-    name: str
-    quantity: int
-    total_cost: int = field(init=False)
-    is_active: bool
-
-    def __post_init__(self):
-        self.total_cost = self.quantity * self.cost
-
-    def set_quantity(self, value: int):
-        self.quantity = value
-        self.total_cost = self.quantity * self.cost
-
 
 class ProductStorage:
+    _product_showcase_template = """
+    Товар №<b>{product_id}</b>
+
+    Название: <b>{product_name}</b>
+
+    Описание: 
+    <em>{product_description}</em>
+
+    ЦЕНА: <b>{product_cost} Тг</b>
+    """
+
+    @classmethod
+    def get_product_showcase_template(cls):
+        return cls._product_showcase_template
 
     def __init__(self):
         self.__products: list = []
 
     @property
-    def products(self):
+    def products(self) -> list:
         return self.__products
 
     @products.setter
     def products(self, value: list):
         self.__products = value
 
-    def is_empty(self):
+    def is_empty(self) -> bool:
         return len(self.__products) < 1
 
-    def get_product(self, product_id):
+    def get_product(self, product_id) -> ProductData:
         for product in self.products:
             if int(product.id) == int(product_id):
                 return product
@@ -136,29 +170,10 @@ class Category(ProductStorage):
         self.products.append(product)
 
 
-@dataclass()
-class BasketData:
-    products: list = field(default_factory=list)
-    total_cost: int = 0
-
-    def transform_to_product_data(self):
-        return [
-            ProductData(
-                id=product["id"],
-                cost=product["cost"],
-                name=product["name"],
-                quantity=product["quantity"],
-                is_active=product["is_active"]
-            )
-            for
-            product in self.products
-        ]
-
-
 class Basket(ProductStorage):
     __empty_basket_case_text = "Ваша корзина пуста!"
 
-    __product_in_basket_showcase_template = """
+    _product_showcase_template = """
     Товар №<b>{product_id}:</b>
 
         Название: <b>{product_name}</b>
@@ -169,28 +184,23 @@ class Basket(ProductStorage):
 
     __total_basket_cost_text = "Общая стоимость корзины: <b>{total_cost} Тг</b>"
 
-    def get_showcase_text(self, product_id: int = None):
+    def get_basket_showcase_text(self):
         basket_text_info = ""
-        if product_id is None:
-            for product in self.products:
-                basket_text_info += self.__product_in_basket_showcase_template.format(
-                    product_id=product.id,
-                    product_name=product.name,
-                    product_quantity=product.quantity,
-                    product_cost=product.cost,
-                    total_cost=product.total_cost
-                )
+        for product in self.products:
+            basket_text_info += self.get_product_showcase_text(product.id)
 
-            basket_text_info += self.__total_basket_cost_text.format(total_cost=self.__total_cost)
-        else:
-            product = self.get_product(product_id)
-            basket_text_info = self.__product_in_basket_showcase_template.format(
-                product_id=product.id,
-                product_name=product.name,
-                product_quantity=product.quantity,
-                product_cost=product.cost,
-                total_cost=product.total_cost
-            )
+        basket_text_info += self.__total_basket_cost_text.format(total_cost=self.__total_cost)
+        return basket_text_info
+
+    def get_product_showcase_text(self, product_id: int):
+        product = self.get_product(product_id)
+        basket_text_info = self._product_showcase_template.format(
+            product_id=product.id,
+            product_name=product.name,
+            product_quantity=product.quantity,
+            product_cost=product.cost,
+            total_cost=product.total_cost
+        )
         return basket_text_info
 
     @classmethod
@@ -219,6 +229,8 @@ class Basket(ProductStorage):
             id=product.id,
             cost=product.cost,
             name=product.name,
+            description=product.description,
+            picture=product.picture,
             quantity=quantity,
             is_active=product.is_active
         )

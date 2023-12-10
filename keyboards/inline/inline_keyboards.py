@@ -1,5 +1,5 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from core.market import Category, Basket, ProductStorage
+from core.market import ProductStorage
 from loader import database_manager
 from aiogram import types
 
@@ -15,7 +15,7 @@ class Keyboard:
     _CALLBACK_SEPARATOR = ":"
     __BACK_TO_MAIN_MENU = "TO_MAIN_MENU"
     _BACK_BUTTON_TEXT = "🔙 Назад"
-    __BACK_BUTTON_CALLBACK = _BACK_CALLBACK_PREFIX + _CALLBACK_SEPARATOR + __BACK_TO_MAIN_MENU
+    _BACK_BUTTON_CALLBACK = _BACK_CALLBACK_PREFIX + _CALLBACK_SEPARATOR + __BACK_TO_MAIN_MENU
 
     _menu_level = "[mainMenu]"
 
@@ -24,10 +24,13 @@ class Keyboard:
         keyboard = InlineKeyboardMarkup(row_width)
         return keyboard
 
-    def __init__(self, row_width: int):
+    def __init__(self, row_width: int, back_callback: str = None):
         self.__keyboard_row_width = row_width
         self._keyboard = self.__init_keyboard(self.__keyboard_row_width)
-        self._back_callback = self.__BACK_BUTTON_CALLBACK
+        if back_callback is None:
+            self._back_callback = self._BACK_BUTTON_CALLBACK
+        else:
+            self._back_callback = back_callback
 
     def get_back_callback(self):
         return self._back_callback
@@ -41,7 +44,7 @@ class Keyboard:
 
     @classmethod
     def filter_back_button_callback(cls, call: types.CallbackQuery) -> bool:
-        return call.data == cls.__BACK_BUTTON_CALLBACK
+        return call.data == cls._BACK_BUTTON_CALLBACK
 
     def _add_back_button(self):
         go_back_button = InlineKeyboardButton(
@@ -104,19 +107,22 @@ class SimpleKeyboards(Keyboard):
         self._add_back_button()
         return self._keyboard
 
-    def get_back_to_products_button(self, back_callback=None):
-        back_to_products_button_text = "Продолжить покупки 🔙"
+    def get_back_button_keyboard(self, back_callback: str = None):
+        self._keyboard.add(self.get_back_button(back_callback))
+        return self._keyboard
 
-        if back_callback is not None:
-            return InlineKeyboardButton(
-                text=back_to_products_button_text,
-                callback_data=back_callback
-            )
+    def get_back_button(self, back_callback: str = None):
+        if back_callback is None:
+            back_callback = Keyboard._BACK_BUTTON_CALLBACK
 
-    def get_back_button(self, back_callback: str):
-        self._keyboard.add(
-            InlineKeyboardButton(self._BACK_BUTTON_TEXT, callback_data=back_callback)
-        )
+        return InlineKeyboardButton(text=self._BACK_BUTTON_TEXT, callback_data=back_callback)
+
+    def get_payment_keyboard(self, total_cost: str, back_callback: str = None):
+        self._keyboard.add(InlineKeyboardButton(
+            text=f"Заплатить KZT {total_cost}",
+            pay=True
+        ))
+        self._keyboard.add(self.get_back_button(back_callback))
         return self._keyboard
 
 
@@ -124,14 +130,16 @@ class MainMenu(FacadeKeyboard):
     _categories_callback = "[categories]"
     _contact_us_callback = "[contactUs]"
     _open_profile_callback = "[openProfile]"
+    _open_basket_callback = "[openBasket]"
     _menu_level = "[mainMenu]"
 
-    _ALL_CALLBACKS = [_categories_callback, _contact_us_callback, _open_profile_callback]
+    _ALL_CALLBACKS = [_categories_callback, _contact_us_callback, _open_profile_callback, _open_basket_callback]
 
     _MENU_FACADE = {
         "📕 Категории": f"{_menu_level}{Keyboard._CALLBACK_SEPARATOR}{_categories_callback}",
         "👤 Мой профиль": f"{_menu_level}{Keyboard._CALLBACK_SEPARATOR}{_open_profile_callback}",
         "👥 Контакты": f"{_menu_level}{Keyboard._CALLBACK_SEPARATOR}{_contact_us_callback}",
+        "🛍 Корзина": f"{_menu_level}{Keyboard._CALLBACK_SEPARATOR}{_open_basket_callback}",
     }
 
     @property
@@ -145,6 +153,10 @@ class MainMenu(FacadeKeyboard):
     @property
     def open_profile_callback(self) -> str:
         return self._open_profile_callback
+
+    @property
+    def open_basket_callback(self):
+        return self._open_basket_callback
 
 
 class PageableKeyboard(Keyboard):
@@ -178,8 +190,8 @@ class PageableKeyboard(Keyboard):
             self._current_page -= 1
             self.__separator -= self._max_elements_on_page
 
-    def __init__(self, row_width, max_elements_on_page=5):
-        super().__init__(row_width=row_width)
+    def __init__(self, row_width: int, max_elements_on_page: int = 5, back_callback: str = None):
+        super().__init__(row_width=row_width, back_callback=back_callback)
         self._max_elements_on_page = max_elements_on_page
         self._current_page = 1
         self.__separator = 0
@@ -225,6 +237,29 @@ class PageableKeyboard(Keyboard):
     def get_buttons_to_show(self):
         return self._buttons_storage[self.__separator: self.__separator + self._max_elements_on_page]
 
+    async def _create_keyboard(self):
+        await self._create_buttons()
+        elements_count = len(self._buttons_storage)
+        if elements_count > 0:
+            if elements_count > self._max_elements_on_page:
+                self._set_max_page_count()
+                self._keyboard.add(*self.get_buttons_to_show())
+                self._create_page_buttons()
+
+            else:
+                self._keyboard.add(*self._buttons_storage)
+
+        else:
+            self._create_empty_list_keyboard()
+
+    async def _create_buttons(self):
+        """
+        your buttons must be created here
+        """
+        buttons = [...]
+        self._buttons_storage = buttons
+        return self._buttons_storage
+
 
 class CategoryMenu(PageableKeyboard):
     _menu_level = "[categories]"
@@ -240,23 +275,7 @@ class CategoryMenu(PageableKeyboard):
         category_id = int(callback_components[category_id_index])
         return category_id
 
-    async def _create_keyboard(self):
-        categories_count = await database_manager.get_categories_count()
-        if categories_count > 0:
-            await self.__create_categories_buttons()
-
-            if categories_count > self.__MAX_CATEGORIES_COUNT_ON_PAGE:
-                self._set_max_page_count()
-                self._keyboard.add(*self.get_buttons_to_show())
-                self._create_page_buttons()
-
-            else:
-                self._keyboard.add(*self._buttons_storage)
-
-        else:
-            self._create_empty_list_keyboard()
-
-    async def __create_categories_buttons(self):
+    async def _create_buttons(self):
         categories = await database_manager.get_categories_list()
         buttons = [
             InlineKeyboardButton(
@@ -271,28 +290,15 @@ class ProductMenu(PageableKeyboard):
     _menu_level = "[products]"
     __MAX_PRODUCTS_COUNT_ON_PAGE = 5
 
-    def __init__(self, row_width: int, storage: ProductStorage, back_callback: str):
-        super().__init__(row_width=row_width, max_elements_on_page=self.__MAX_PRODUCTS_COUNT_ON_PAGE)
+    def __init__(self, row_width: int, storage: ProductStorage, back_callback: str = None):
+        super().__init__(
+            row_width=row_width,
+            max_elements_on_page=self.__MAX_PRODUCTS_COUNT_ON_PAGE,
+            back_callback=back_callback
+        )
         self._product_storage = storage
-        self._back_callback = back_callback
 
-    async def _create_keyboard(self):
-        products_count = len(self._product_storage.products)
-        if products_count > 0:
-            await self._create_products_buttons()
-
-            if products_count > self.__MAX_PRODUCTS_COUNT_ON_PAGE:
-                self._set_max_page_count()
-                self._keyboard.add(*self.get_buttons_to_show())
-                self._create_page_buttons()
-
-            else:
-                self._keyboard.add(*self._buttons_storage)
-
-        else:
-            self._create_empty_list_keyboard()
-
-    async def _create_products_buttons(self):
+    async def _create_buttons(self):
         buttons = [
             InlineKeyboardButton(
                 text=f"{product_object.name} | {product_object.cost} Тг",
@@ -405,13 +411,19 @@ class QuantitySelectionMenu(FacadeKeyboard):
 
 class ProfileMenu(FacadeKeyboard):
     _menu_level = "[profile]"
-
     __OPEN_BASKET_CALLBACK = "[OpenBasket]"
     _ALL_CALLBACKS = [__OPEN_BASKET_CALLBACK]
 
     _MENU_FACADE = {
         "🛍 Посмотреть корзину": f"{_menu_level}{Keyboard._CALLBACK_SEPARATOR}{__OPEN_BASKET_CALLBACK}",
     }
+
+    _profile_showcase_template = \
+        "️⚙️ ️<b>Ваш профиль:</b>\n\n<b>Ваш ID:</b> {user_id}\n<b>Ваш телеграм ID:</b> {telegram_id}"
+
+    @classmethod
+    def get_profile_showcase_template(cls):
+        return cls._profile_showcase_template
 
     def __init__(self, row_width, back_callback: str = None):
         super().__init__(row_width)
@@ -448,9 +460,10 @@ class BasketInteractionMenu(FacadeKeyboard):
         "Очистить корзину": f"{_menu_level}{Keyboard._CALLBACK_SEPARATOR}{__CLEAR_BASKET_CALLBACK}",
     }
 
-    def __init__(self, row_width: int, back_callback: str):
+    def __init__(self, row_width: int, back_callback: str = None):
         super().__init__(row_width)
-        self._back_callback = back_callback
+        if back_callback is not None:
+            self._back_callback = back_callback
 
     @property
     def buy_all_products_callback(self):
@@ -482,10 +495,10 @@ class BasketProductMenu(ProductMenu):
     def get_choose_product_text(cls):
         return cls.__CHOOSE_PRODUCT_TEXT
 
-    def __init__(self, storage: ProductStorage, back_callback: str):
+    def __init__(self, storage: ProductStorage, back_callback: str = None):
         super().__init__(self.__BASKET_PRODUCT_MENU_ROW_WIDTH, storage, back_callback)
 
-    async def _create_products_buttons(self):
+    async def _create_buttons(self):
         buttons = [
             InlineKeyboardButton(
                 text=f"{product_object.name} ( {product_object.quantity} )-шт | {product_object.total_cost} Тг",
