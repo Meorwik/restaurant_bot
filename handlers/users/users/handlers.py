@@ -2,23 +2,25 @@ from keyboards.inline.inline_keyboards import \
     CategoryMenu, MainMenu, ProductMenu, ProductInteractionMenu, SimpleKeyboards, Keyboard, \
     PageableKeyboard, ProfileMenu, BasketInteractionMenu, QuantitySelectionMenu, BasketProductMenu
 from handlers.commands.start import open_main_menu, SHOP_PIC_PATH, MAIN_MENU_ROW_WIDTH
-from aiogram.utils.exceptions import MessageCantBeEdited
 from loader import dp, database_manager, bot, payments_manager
 from core.market import Product, Category, Basket, ProductData
+from aiogram.utils.exceptions import MessageCantBeEdited
 from aiogram.types.message import ContentType
 from utils.misc.logging import CLIENT_LOGGER
 from aiogram.dispatcher import FSMContext
 from aiogram.types import InputMediaPhoto
 from states.states import StateGroup
 from aiogram import types
+from typing import Final
 
-PROFILE_MENU_ROW_WIDTH = 1
-BASKET_INTERACTION_MENU_ROW_WIDTH = 1
-PRODUCT_LIST_ROW_WIDTH = 1
-CATEGORY_LIST_ROW_WIDTH = 2
-PRODUCT_INTERACTION_ROW_WIDTH = 1
-SUCCESSFUL_PAYMENT_PICTURE_PATH = "data/pictures/successfu_paymentl.png"
-ERROR_404_PICTURE_PATH = "data/pictures/404_error.jpg"
+
+PROFILE_MENU_ROW_WIDTH: Final[int] = 1
+BASKET_INTERACTION_MENU_ROW_WIDTH: Final[int] = 1
+PRODUCT_LIST_ROW_WIDTH: Final[int] = 1
+CATEGORY_LIST_ROW_WIDTH: Final[int] = 2
+PRODUCT_INTERACTION_ROW_WIDTH: Final[int] = 1
+SUCCESSFUL_PAYMENT_PICTURE_PATH: Final[str] = "data/pictures/successfu_paymentl.png"
+ERROR_404_PICTURE_PATH: Final[str] = "data/pictures/404_error.jpg"
 
 
 async def get_user_profile_photo(call: types.CallbackQuery) -> InputMediaPhoto:
@@ -223,7 +225,6 @@ async def handle_category_menu(call: types.CallbackQuery, state: FSMContext):
 async def handle_product_menu(call: types.CallbackQuery, state: FSMContext):
     product_showcase_template = Category.get_product_showcase_template()
     product_to_show: ProductData = None
-
     async with state.proxy() as data:
         current_category: Category = data["current_category"]
         back_callback = data["To_product_list"]

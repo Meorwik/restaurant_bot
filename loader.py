@@ -12,3 +12,4 @@ dp = Dispatcher(bot, storage=storage)
 current_config = get_connection_config()
 database_manager = PostgresDataBaseManager(current_config)
 payments_manager = PaymentsManager(bot)
+

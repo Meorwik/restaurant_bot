@@ -1,7 +1,16 @@
 from data.config import CURRENCY_RATIO, CURRENT_CURRENCY
 from aiogram import types
+from typing import Final
 from aiogram import Bot
 import json
+
+
+class MemoryStorage:
+    def __repr__(self):
+        return "..."
+
+    def s(self):
+        ...
 
 
 class JsonTool:
@@ -32,6 +41,8 @@ class JsonTool:
 
 
 class PaymentsManager:
+    __TEST_INVOICE_PAYLOAD: Final[str] = "test-invoice-payload"
+    __PROD_INVOICE_PAYLOAD: Final[str] = "XXX"
 
     def __repr__(self):
         return f"PaymentsManagerObject - {id(self)}"
@@ -42,7 +53,7 @@ class PaymentsManager:
             "currency": CURRENT_CURRENCY,
             "ratio": CURRENCY_RATIO[CURRENT_CURRENCY],
             "token": payment_token,
-            "payload": "test-invoice-payload"
+            "payload": self.__TEST_INVOICE_PAYLOAD
         }
 
     def set_payment_token(self, payment_token: str):

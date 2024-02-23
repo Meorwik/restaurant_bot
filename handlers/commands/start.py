@@ -1,12 +1,13 @@
-from keyboards.inline.inline_keyboards import MainMenu
 from aiogram.dispatcher.filters.builtin import CommandStart
+from keyboards.inline.inline_keyboards import MainMenu
 from aiogram.types import InputMediaPhoto
 from loader import dp, database_manager
 from states.states import StateGroup
 from aiogram import types
+from typing import Final
 
-SHOP_PIC_PATH = "data/pictures/pizza_hut.png"
-MAIN_MENU_ROW_WIDTH = 1
+SHOP_PIC_PATH: Final[str] = "data/pictures/pizza_hut.png"
+MAIN_MENU_ROW_WIDTH: Final[int] = 1
 
 
 async def get_greeting_text(message: types.Message):

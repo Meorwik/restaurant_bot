@@ -341,8 +341,8 @@ class QuantitySelectionMenu(FacadeKeyboard):
 
     _menu_level = "[productQuantitySelection]"
 
-    __MINUS_ONE_TEXT = "«"
-    __PLUS_ONE_TEXT = "»"
+    __MINUS_ONE_TEXT = "-"
+    __PLUS_ONE_TEXT = "+"
     __APPROVE_TEXT = "✅ Подтвердить"
 
     __PLUS_ONE_CALLBACK = "[PlusOne]"
